@@ -17,5 +17,47 @@
 int CALLBACK WinMain (HINSTANCE hInstance, HINSTANCE hPrevInstance,
                       LPSTR lpCmdLine, int nCmdShow)
 {
-	return kdMain(__argc, (const KDchar * const *)__argv);
+    return kdMain (__argc, (const KDchar * const *)__argv);
+}
+
+KD_API void KD_APIENTRY kdLogMessage (const KDchar *string)
+{
+}
+
+KD_API KDWindow *KD_APIENTRY kdCreateWindow (EGLDisplay display,
+        EGLConfig config, void *eventuserptr)
+{
+    return KD_NULL;
+}
+
+KD_API KDint KD_APIENTRY kdSetWindowPropertyiv (KDWindow *window, KDint pname,
+        const KDint32 *param)
+{
+    return -1;
+}
+
+KD_API KDint KD_APIENTRY kdSetWindowPropertycv (KDWindow *window, KDint pname,
+        const KDchar *param)
+{
+    return -1;
+}
+
+KD_API KDint KD_APIENTRY kdRealizeWindow (KDWindow *window,
+        EGLNativeWindowType *nativewindow)
+{
+    return -1;
+}
+
+KD_API void KD_APIENTRY kdDefaultEvent (const KDEvent *event)
+{
+}
+
+KD_API const KDEvent *KD_APIENTRY kdWaitEvent (KDust timeout)
+{
+    return KD_NULL;
+}
+
+KD_API KDint KD_APIENTRY kdDestroyWindow (KDWindow *window)
+{
+    return -1;
 }
