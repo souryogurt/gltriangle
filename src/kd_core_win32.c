@@ -24,6 +24,24 @@ KD_API void KD_APIENTRY kdLogMessage (const KDchar *string)
 {
 }
 
+KD_API void KD_APIENTRY kdSetError (KDint error)
+{
+}
+
+KD_API void *KD_APIENTRY kdMalloc (KDsize size)
+{
+    return KD_NULL;
+}
+
+KD_API void KD_APIENTRY kdFree (void *ptr)
+{
+}
+
+KD_API KDust KD_APIENTRY kdGetTimeUST (void)
+{
+    return -1;
+}
+
 KD_API KDWindow *KD_APIENTRY kdCreateWindow (EGLDisplay display,
         EGLConfig config, void *eventuserptr)
 {
