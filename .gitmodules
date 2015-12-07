@@ -1,0 +1,3 @@
+[submodule "eglproxy"]
+	path = eglproxy
+	url = https://github.com/souryogurt/eglproxy.git
