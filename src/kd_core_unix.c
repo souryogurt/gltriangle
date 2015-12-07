@@ -54,7 +54,7 @@ KD_API KDWindow *KD_APIENTRY kdCreateWindow (EGLDisplay display,
     XVisualInfo *info = NULL;
     KDWindow *window = KD_NULL;
     XVisualInfo info_template;
-    if (x11_display != NULL) {
+    if (x11_display == NULL) {
         x11_display = XOpenDisplay (NULL);
         if (x11_display == NULL ) {
             kdSetError (KD_EPERM);

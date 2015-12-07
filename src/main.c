@@ -20,11 +20,11 @@ KDint kdMain (KDint argc, const KDchar *const *argv)
     EGLBoolean err;
     EGLConfig config;
     EGLint n_configs;
-    EGLContext context;
+    EGLContext context = EGL_NO_CONTEXT;
     KDWindow *window = KD_NULL;
     KDint32 win_size[] = {640, 480};
     EGLNativeWindowType nativewindow;
-    EGLSurface window_surface;
+    EGLSurface window_surface = EGL_NO_SURFACE;
     const KDEvent *event;
 
     display = eglGetDisplay (EGL_DEFAULT_DISPLAY);
