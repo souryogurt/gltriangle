@@ -3,10 +3,12 @@
 #include <stdio.h>
 
 struct KDWindow {
+    struct KDWindow *next;
     Atom wm_delete_window; /**< Atom to receive "window closed" message */
     Window xwindow; /**< Native X11 window */
     int width; /**< Width of window's client area */
     int height; /**< Height of window's client area */
+    void *eventuserptr;
 };
 
 /** The name the program was run with */
@@ -14,7 +16,9 @@ static const char *program_name;
 
 static Display *x11_display = NULL;
 
-static KDEvent default_event;
+static KDWindow *window_list = NULL;
+
+static KDEvent last_event;
 
 int main (int argc, char *argv[])
 {
@@ -81,6 +85,9 @@ KD_API KDWindow *KD_APIENTRY kdCreateWindow (EGLDisplay display,
         Window root = RootWindow (x11_display, info->screen);
         window->width = 0;
         window->height = 0;
+        window->eventuserptr = eventuserptr;
+        window->next = window_list;
+        window_list = window;
         window_attributes.colormap = XCreateColormap (x11_display, root,
                                      info->visual, AllocNone);
         window_attributes.background_pixmap = None;
@@ -128,15 +135,50 @@ KD_API void KD_APIENTRY kdDefaultEvent (const KDEvent *event)
 
 KD_API const KDEvent *KD_APIENTRY kdWaitEvent (KDust timeout)
 {
+    int n_events = XPending (x11_display);
+    while (((timeout == 0) && (n_events > 0)) || (timeout == -1)) {
+        XEvent event;
+        KDWindow *window;
+        XNextEvent (x11_display, &event);
+        for (window = window_list; window != NULL; window = window->next) {
+            if (event.xany.window == window->xwindow) {
+                last_event.timestamp = kdGetTimeUST();
+                if (event.type == ClientMessage) {
+                    if ((Atom)event.xclient.data.l[0] == window->wm_delete_window) {
+                        last_event.type = KD_EVENT_WINDOW_CLOSE;
+                        last_event.userptr = window->eventuserptr;
+                        return &last_event;
+                    }
+                } else if (event.type == ConfigureNotify) {
+                    XConfigureEvent xce;
+                    xce = event.xconfigure;
+                    if ((xce.width != window->width) || (xce.height != window->height)) {
+                        window->width = xce.width;
+                        window->height = xce.height;
+                        last_event.type = KD_EVENT_WINDOWPROPERTY_CHANGE;
+                        last_event.userptr = window->eventuserptr;
+                        last_event.data.windowproperty.pname = KD_WINDOWPROPERTY_SIZE;
+                        return &last_event;
+                    }
+                }
+            }
+        }
+        n_events--;
+    }
+    kdSetError (KD_EAGAIN);
     return KD_NULL;
 }
 
 KD_API KDint KD_APIENTRY kdDestroyWindow (KDWindow *window)
 {
-    if (window != NULL) {
-        XDestroyWindow (x11_display, window->xwindow);
-        kdFree (window);
-        return 0;
+    KDWindow **current;
+    for (current = &window_list; *current; current = & (*current)->next) {
+        if (*current == window) {
+            *current = window->next;
+            XDestroyWindow (x11_display, window->xwindow);
+            kdFree (window);
+            return 0;
+        }
     }
     return -1;
 }

@@ -77,7 +77,7 @@ KDint kdMain (KDint argc, const KDchar *const *argv)
         goto _EXIT_APP;
     }
 
-    while ((event = kdWaitEvent (0)) != 0) {
+    while ((event = kdWaitEvent (-1)) != 0) {
         kdDefaultEvent (event);
         eglSwapBuffers (display, window_surface);
     }
