@@ -20,6 +20,8 @@ static KDWindow *window_list = NULL;
 
 static KDEvent last_event;
 
+static KDint last_error;
+
 int main (int argc, char *argv[])
 {
     program_name = argv[0];
@@ -33,6 +35,7 @@ KD_API void KD_APIENTRY kdLogMessage (const KDchar *string)
 
 KD_API void KD_APIENTRY kdSetError (KDint error)
 {
+    last_error = error;
 }
 
 KD_API void *KD_APIENTRY kdMalloc (KDsize size)
