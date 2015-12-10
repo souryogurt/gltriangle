@@ -107,7 +107,11 @@ KD_API KDint KD_APIENTRY kdRealizeWindow (KDWindow *window,
     Window root;
     const unsigned long attributes_mask = CWBorderPixel | CWColormap |
                                           CWEventMask;
-    if (window == NULL || nativewindow == NULL) {
+    KDWindow *current = window_list;
+    while (current != NULL && current != window) {
+        current = current->next;
+    }
+    if (current == NULL || nativewindow == NULL) {
         kdSetError (KD_EINVAL);
         return -1;
     }
