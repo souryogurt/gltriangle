@@ -10,7 +10,7 @@ struct KDWindow {
     EGLConfig config;
     int width; /**< Width of window's client area */
     int height; /**< Height of window's client area */
-    char *caption;
+    const char *caption;
     int visible;
     int focused;
     void *userptr;
@@ -166,12 +166,39 @@ KD_API KDint KD_APIENTRY kdDestroyWindow (KDWindow *window)
 KD_API KDint KD_APIENTRY kdSetWindowPropertyiv (KDWindow *window, KDint pname,
         const KDint32 *param)
 {
+    KDWindow *current = window_list;
+    while (current != NULL && current != window) {
+        current = current->next;
+    }
+    if (current != NULL && pname == KD_WINDOWPROPERTY_SIZE) {
+        window->width = param[0];
+        window->height = param[1];
+        if (window->xwindow) {
+            XResizeWindow (x11_display, window->xwindow,
+                           (unsigned int) window->width,
+                           (unsigned int) window->height);
+        }
+        return 0;
+    }
+    kdSetError (KD_EINVAL);
     return -1;
 }
 
 KD_API KDint KD_APIENTRY kdSetWindowPropertycv (KDWindow *window, KDint pname,
         const KDchar *param)
 {
+    KDWindow *current = window_list;
+    while (current != NULL && current != window) {
+        current = current->next;
+    }
+    if (current != NULL && pname == KD_WINDOWPROPERTY_CAPTION) {
+        window->caption = param;
+        if (window->xwindow) {
+            XStoreName (x11_display, window->xwindow, window->caption);
+        }
+        return 0;
+    }
+    kdSetError (KD_EINVAL);
     return -1;
 }
 
