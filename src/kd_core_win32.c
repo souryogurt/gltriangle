@@ -14,14 +14,64 @@
 #pragma warning( disable: 4710 )
 #endif /* _MSC_VER */
 
+struct KDWindow {
+    struct KDWindow *next;
+    HWND hwindow;
+    EGLDisplay display;
+    EGLConfig config;
+    int width; /**< Width of window's client area */
+    int height; /**< Height of window's client area */
+    const char *caption;
+    int visible;
+    int focused;
+    void *userptr;
+};
+
+static KDWindow *window_list = NULL;
+
+static const WCHAR *MainWindowClassName = L"KD Window Class";
+static HINSTANCE AppInstance;
+
+LRESULT CALLBACK WindowProcedure (HWND hwnd, UINT uMsg, WPARAM wParam,
+                                  LPARAM lParam);
+
 int CALLBACK WinMain (HINSTANCE hInstance, HINSTANCE hPrevInstance,
                       LPSTR lpCmdLine, int nCmdShow)
 {
-    return kdMain (__argc, (const KDchar * const *)__argv);
+    KDint result;
+    WNDCLASSEX wc = {0};
+    AppInstance = hInstance;
+    wc.cbSize = sizeof (WNDCLASSEX);
+    wc.hCursor = LoadCursor (NULL, IDC_ARROW);
+    wc.hInstance = AppInstance;
+    wc.lpfnWndProc = WindowProcedure;
+    wc.lpszClassName = MainWindowClassName;
+    wc.style = CS_OWNDC;
+    if ( RegisterClassExW (&wc) == 0 ) {
+        return 1;
+    }
+    result = kdMain (__argc, (const KDchar * const *)__argv);
+    UnregisterClass (MainWindowClassName, AppInstance);
+    return result;
+}
+
+LPWSTR get_unicode (const KDchar *string)
+{
+    LPWSTR UnicodeString = NULL;
+    int UnicodeStringLength = MultiByteToWideChar (CP_UTF8, MB_ERR_INVALID_CHARS,
+                              string, -1, UnicodeString, 0);
+    UnicodeString = kdMalloc (sizeof (WCHAR) * UnicodeStringLength);
+    MultiByteToWideChar (CP_UTF8, MB_ERR_INVALID_CHARS, string, -1, UnicodeString,
+                         UnicodeStringLength);
+    return UnicodeString;
 }
 
 KD_API void KD_APIENTRY kdLogMessage (const KDchar *string)
 {
+    LPWSTR UnicodeString = get_unicode (string);
+    OutputDebugStringW (UnicodeString);
+    OutputDebugStringW (L"\n");
+    kdFree (UnicodeString);
 }
 
 KD_API void KD_APIENTRY kdSetError (KDint error)
@@ -30,11 +80,12 @@ KD_API void KD_APIENTRY kdSetError (KDint error)
 
 KD_API void *KD_APIENTRY kdMalloc (KDsize size)
 {
-    return KD_NULL;
+    return malloc (size);
 }
 
 KD_API void KD_APIENTRY kdFree (void *ptr)
 {
+    free (ptr);
 }
 
 KD_API KDust KD_APIENTRY kdGetTimeUST (void)
@@ -45,25 +96,152 @@ KD_API KDust KD_APIENTRY kdGetTimeUST (void)
 KD_API KDWindow *KD_APIENTRY kdCreateWindow (EGLDisplay display,
         EGLConfig config, void *eventuserptr)
 {
-    return KD_NULL;
+    KDWindow *window = (KDWindow *) kdMalloc (sizeof (KDWindow));
+    if (window == NULL) {
+        kdSetError (KD_ENOMEM);
+        return KD_NULL;
+    }
+    window->userptr = (eventuserptr) ? eventuserptr : window;
+    window->width = CW_USEDEFAULT;
+    window->height = CW_USEDEFAULT;
+    window->caption = NULL;
+    window->visible = 1;
+    window->focused = 1;
+    window->hwindow = NULL;
+    window->display = display;
+    window->config = config;
+    window->next = window_list;
+    window_list = window;
+    return window;
 }
 
 KD_API KDint KD_APIENTRY kdSetWindowPropertyiv (KDWindow *window, KDint pname,
         const KDint32 *param)
 {
+    KDWindow *current = window_list;
+    while (current != NULL && current != window) {
+        current = current->next;
+    }
+    if (current != NULL && pname == KD_WINDOWPROPERTY_SIZE) {
+        window->width = param[0];
+        window->height = param[1];
+        if (window->hwindow) {
+            RECT window_size = {0, 0, window->width, window->height};
+            DWORD dwStyle = GetWindowLong (window->hwindow, GWL_STYLE);
+            AdjustWindowRect (&window_size, dwStyle, FALSE);
+            SetWindowPos (window->hwindow, 0, 0, 0,
+                          window_size.right - window_size.left,
+                          window_size.bottom - window_size.top,
+                          SWP_NOZORDER | SWP_NOMOVE | SWP_NOACTIVATE);
+        }
+        return 0;
+    }
+    kdSetError (KD_EINVAL);
     return -1;
 }
 
 KD_API KDint KD_APIENTRY kdSetWindowPropertycv (KDWindow *window, KDint pname,
         const KDchar *param)
 {
+    KDWindow *current = window_list;
+    while (current != NULL && current != window) {
+        current = current->next;
+    }
+    if (current != NULL && pname == KD_WINDOWPROPERTY_CAPTION) {
+        window->caption = param;
+        if (window->hwindow) {
+            LPWSTR caption = get_unicode (window->caption);
+            SetWindowTextW (window->hwindow, caption);
+            kdFree (caption);
+        }
+        return 0;
+    }
+    kdSetError (KD_EINVAL);
     return -1;
+}
+
+LRESULT CALLBACK WindowProcedure (HWND hwnd, UINT uMsg, WPARAM wParam,
+                                  LPARAM lParam)
+{
+    switch (uMsg) {
+        case WM_CLOSE:
+            PostQuitMessage (0);
+            break;
+        case WM_CREATE:
+            break;
+        default:
+            return DefWindowProc (hwnd, uMsg, wParam, lParam);
+    }
+    return 0;
 }
 
 KD_API KDint KD_APIENTRY kdRealizeWindow (KDWindow *window,
         EGLNativeWindowType *nativewindow)
 {
-    return -1;
+
+    DWORD dwStyle;
+    DWORD width, height;
+    EGLint err;
+    LPWSTR caption;
+    EGLint pixel_format;
+    HDC hDC;
+    PIXELFORMATDESCRIPTOR pfd = {0};
+    KDWindow *current = window_list;
+    while (current != NULL && current != window) {
+        current = current->next;
+    }
+    if (current == NULL || nativewindow == NULL) {
+        kdSetError (KD_EINVAL);
+        return -1;
+    }
+    if (window->hwindow) {
+        kdSetError (KD_EPERM);
+        return -1;
+    }
+
+    dwStyle = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN;
+    if (window->width != CW_USEDEFAULT && window->height != CW_USEDEFAULT) {
+        RECT window_size = {0, 0, window->width, window->height};
+        AdjustWindowRect (&window_size, dwStyle & ~WS_OVERLAPPED, FALSE);
+        width = window_size.right - window_size.left;
+        height = window_size.bottom - window_size.top;
+    } else {
+        width = window->width;
+        height = window->height;
+    }
+    if (window->caption != NULL) {
+        caption = get_unicode (window->caption);
+    } else {
+        caption = window->caption;
+    }
+
+    window->hwindow = CreateWindowEx (0, MainWindowClassName, caption,
+                                      dwStyle, CW_USEDEFAULT, CW_USEDEFAULT,
+                                      width, height, 0, 0, AppInstance, 0);
+    kdFree (caption);
+    if (window->visible) {
+        ShowWindow (window->hwindow, SW_SHOWNORMAL);
+        window->focused = 1;
+    }
+
+    err = eglGetConfigAttrib (window->display, window->config, EGL_NATIVE_VISUAL_ID,
+                              &pixel_format);
+    if (err == EGL_FALSE) {
+        DestroyWindow (window->hwindow);
+        kdSetError (KD_ENOMEM);
+        return -1;
+    }
+    hDC = GetDC (window->hwindow);
+    DescribePixelFormat (hDC, pixel_format, sizeof (PIXELFORMATDESCRIPTOR), &pfd);
+    if (!SetPixelFormat (hDC, pixel_format, &pfd)) {
+        ReleaseDC (window->hwindow, hDC);
+        DestroyWindow (window->hwindow);
+        kdSetError (KD_ENOMEM);
+        return -1;
+    }
+    ReleaseDC (window->hwindow, hDC);
+    *nativewindow = window->hwindow;
+    return 0;
 }
 
 KD_API void KD_APIENTRY kdDefaultEvent (const KDEvent *event)
@@ -72,10 +250,21 @@ KD_API void KD_APIENTRY kdDefaultEvent (const KDEvent *event)
 
 KD_API const KDEvent *KD_APIENTRY kdWaitEvent (KDust timeout)
 {
+    kdSetError (KD_EAGAIN);
     return KD_NULL;
 }
 
 KD_API KDint KD_APIENTRY kdDestroyWindow (KDWindow *window)
 {
+    KDWindow **current;
+    for (current = &window_list; *current; current = & (*current)->next) {
+        if (*current == window && (window->hwindow != NULL)) {
+            *current = window->next;
+            DestroyWindow (window->hwindow);
+            kdFree (window);
+            return 0;
+        }
+    }
+    kdSetError (KD_EINVAL);
     return -1;
 }
