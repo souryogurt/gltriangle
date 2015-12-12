@@ -4,6 +4,7 @@
 #pragma warning( disable: 4668 )
 #pragma warning( disable: 4820 )
 #pragma warning( disable: 4255 )
+#pragma warning( disable: 4820 )
 #endif /* _MSC_VER */
 #include <tchar.h>
 #include <windows.h>
@@ -60,7 +61,7 @@ LPWSTR get_unicode (const KDchar *string)
     LPWSTR UnicodeString = NULL;
     int UnicodeStringLength = MultiByteToWideChar (CP_UTF8, MB_ERR_INVALID_CHARS,
                               string, -1, UnicodeString, 0);
-    UnicodeString = kdMalloc (sizeof (WCHAR) * UnicodeStringLength);
+    UnicodeString = (LPWSTR) kdMalloc (sizeof (WCHAR) * UnicodeStringLength);
     MultiByteToWideChar (CP_UTF8, MB_ERR_INVALID_CHARS, string, -1, UnicodeString,
                          UnicodeStringLength);
     return UnicodeString;
@@ -126,8 +127,10 @@ KD_API KDint KD_APIENTRY kdSetWindowPropertyiv (KDWindow *window, KDint pname,
         window->width = param[0];
         window->height = param[1];
         if (window->hwindow) {
-            RECT window_size = {0, 0, window->width, window->height};
+            RECT window_size = {0};
             DWORD dwStyle = GetWindowLong (window->hwindow, GWL_STYLE);
+            window_size.right = window->width;
+            window_size.bottom = window->height;
             AdjustWindowRect (&window_size, dwStyle, FALSE);
             SetWindowPos (window->hwindow, 0, 0, 0,
                           window_size.right - window_size.left,
@@ -201,7 +204,9 @@ KD_API KDint KD_APIENTRY kdRealizeWindow (KDWindow *window,
 
     dwStyle = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN;
     if (window->width != CW_USEDEFAULT && window->height != CW_USEDEFAULT) {
-        RECT window_size = {0, 0, window->width, window->height};
+        RECT window_size = {0};
+        window_size.right = window->width;
+        window_size.bottom = window->height;
         AdjustWindowRect (&window_size, dwStyle & ~WS_OVERLAPPED, FALSE);
         width = window_size.right - window_size.left;
         height = window_size.bottom - window_size.top;
@@ -212,7 +217,7 @@ KD_API KDint KD_APIENTRY kdRealizeWindow (KDWindow *window,
     if (window->caption != NULL) {
         caption = get_unicode (window->caption);
     } else {
-        caption = window->caption;
+        caption = (LPWSTR) window->caption;
     }
 
     window->hwindow = CreateWindowEx (0, MainWindowClassName, caption,
