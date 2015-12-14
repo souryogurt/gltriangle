@@ -1,6 +1,7 @@
 #include <KD/kd.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 struct KDWindow {
     struct KDWindow *next;
@@ -23,7 +24,11 @@ static Display *x11_display = NULL;
 
 static KDWindow *window_list = NULL;
 
-static KDEvent last_event;
+#define MESSAGE_QUEUE_SIZE 200
+static KDEvent message_queue[MESSAGE_QUEUE_SIZE];
+static unsigned int queue_head = 0;
+static unsigned int queue_tail = 0;
+static unsigned int queue_active = 0;
 
 static KDint last_error;
 
@@ -208,41 +213,94 @@ KD_API KDint KD_APIENTRY kdSetWindowPropertycv (KDWindow *window, KDint pname,
     return -1;
 }
 
+static void enqueue_event (KDEvent *new_event)
+{
+    kdMemcpy (&message_queue[queue_tail], new_event, sizeof (KDEvent));
+    queue_tail = (queue_tail + 1) % MESSAGE_QUEUE_SIZE;
+    if (queue_active < MESSAGE_QUEUE_SIZE) {
+        queue_active++;
+    } else {
+        queue_head = (queue_head + 1) % MESSAGE_QUEUE_SIZE;
+    }
+}
+
+static KDEvent *dequeue_event (void)
+{
+    KDEvent *ev;
+    if (!queue_active) {
+        return NULL;
+    }
+    ev = &message_queue[queue_head];
+    queue_head = (queue_head + 1) % MESSAGE_QUEUE_SIZE;
+    queue_active--;
+    return ev;
+}
+
 KD_API void KD_APIENTRY kdDefaultEvent (const KDEvent *event)
 {
 }
 
+static void window_procedure (const XEvent *event)
+{
+    XConfigureEvent xce;
+    KDWindow *window = window_list;
+    KDEvent ev = {0};
+    while (window != NULL && window->xwindow != event->xany.window) {
+        window = window->next;
+    }
+    if (window == NULL) {
+        return;
+    }
+    ev.timestamp = kdGetTimeUST();
+    ev.userptr = window->userptr;
+    switch (event->type) {
+        case ClientMessage:
+            if ((Atom)event->xclient.data.l[0] == window->wm_delete_window) {
+                ev.type = KD_EVENT_WINDOW_CLOSE;
+            } else {
+                return;
+            }
+            break;
+        case ConfigureNotify:
+            xce = event->xconfigure;
+            if ((xce.width != window->width) || (xce.height != window->height)) {
+                window->width = xce.width;
+                window->height = xce.height;
+                ev.type = KD_EVENT_WINDOWPROPERTY_CHANGE;
+                ev.data.windowproperty.pname = KD_WINDOWPROPERTY_SIZE;
+            } else {
+                return;
+            }
+            break;
+        default:
+            return;
+    }
+    /* TODO: call callback if set and return. */
+    /* if no callbacks are set, then enquee */
+    enqueue_event (&ev);
+}
+
 KD_API const KDEvent *KD_APIENTRY kdWaitEvent (KDust timeout)
 {
-    int n_events = XPending (x11_display);
-    while (((timeout == 0) && (n_events > 0)) || (timeout == -1)) {
+    while (1) {
+        KDEvent *ev;
         XEvent event;
-        KDWindow *window;
-        XNextEvent (x11_display, &event);
-        for (window = window_list; window != NULL; window = window->next) {
-            if (event.xany.window == window->xwindow) {
-                last_event.timestamp = kdGetTimeUST ();
-                if (event.type == ClientMessage) {
-                    if ((Atom)event.xclient.data.l[0] == window->wm_delete_window) {
-                        last_event.type = KD_EVENT_WINDOW_CLOSE;
-                        last_event.userptr = window->userptr;
-                        return &last_event;
-                    }
-                } else if (event.type == ConfigureNotify) {
-                    XConfigureEvent xce;
-                    xce = event.xconfigure;
-                    if ((xce.width != window->width) || (xce.height != window->height)) {
-                        window->width = xce.width;
-                        window->height = xce.height;
-                        last_event.type = KD_EVENT_WINDOWPROPERTY_CHANGE;
-                        last_event.userptr = window->userptr;
-                        last_event.data.windowproperty.pname = KD_WINDOWPROPERTY_SIZE;
-                        return &last_event;
-                    }
-                }
-            }
+        int n_events = XPending (x11_display);
+        while (n_events > 0) {
+            XNextEvent (x11_display, &event);
+            window_procedure (&event);
+            n_events--;
         }
-        n_events--;
+        ev = dequeue_event();
+        if (ev != NULL) {
+            return ev;
+        }
+        if (timeout == 0) {
+            kdSetError (KD_EAGAIN);
+            return KD_NULL;
+        }
+        /* Wait for event */
+        XPeekEvent (x11_display, &event);
     }
     kdSetError (KD_EAGAIN);
     return KD_NULL;

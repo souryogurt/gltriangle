@@ -174,7 +174,7 @@ KD_API KDint KD_APIENTRY kdSetWindowPropertycv (KDWindow *window, KDint pname,
     return -1;
 }
 
-void enqueue_event (KDEvent *new_event)
+static void enqueue_event (KDEvent *new_event)
 {
     kdMemcpy (&message_queue[queue_tail], new_event, sizeof (KDEvent));
     queue_tail = (queue_tail + 1) % MESSAGE_QUEUE_SIZE;
@@ -185,7 +185,7 @@ void enqueue_event (KDEvent *new_event)
     }
 }
 
-KDEvent *dequeue_event (void)
+static KDEvent *dequeue_event (void)
 {
     KDEvent *ev;
     if (!queue_active) {
