@@ -242,6 +242,8 @@ LRESULT CALLBACK WindowProcedure (HWND hwnd, UINT uMsg, WPARAM wParam,
             ev.type = KD_EVENT_WINDOW_FOCUS;
             ev.data.windowfocus.focusstate = 1;
             break;
+        default:
+            return result;
     }
     /* TODO: call callback if set and return. */
     /* if no callbacks are set, then enquee */
