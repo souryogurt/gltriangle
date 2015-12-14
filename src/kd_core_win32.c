@@ -33,6 +33,12 @@ static KDWindow *window_list = NULL;
 static const WCHAR *MainWindowClassName = L"KD Window Class";
 static HINSTANCE AppInstance;
 
+#define MESSAGE_QUEUE_SIZE 200
+static KDEvent message_queue[MESSAGE_QUEUE_SIZE] = {0};
+static unsigned int queue_head = 0;
+static unsigned int queue_tail = 0;
+static unsigned int queue_active = 0;
+
 LRESULT CALLBACK WindowProcedure (HWND hwnd, UINT uMsg, WPARAM wParam,
                                   LPARAM lParam);
 
@@ -87,6 +93,11 @@ KD_API void *KD_APIENTRY kdMalloc (KDsize size)
 KD_API void KD_APIENTRY kdFree (void *ptr)
 {
     free (ptr);
+}
+
+KD_API void *KD_APIENTRY kdMemcpy (void *buf, const void *src, KDsize len)
+{
+    return memcpy (buf, src, len);
 }
 
 KD_API KDust KD_APIENTRY kdGetTimeUST (void)
@@ -163,19 +174,79 @@ KD_API KDint KD_APIENTRY kdSetWindowPropertycv (KDWindow *window, KDint pname,
     return -1;
 }
 
+void enqueue_event (KDEvent *new_event)
+{
+    kdMemcpy (&message_queue[queue_tail], new_event, sizeof (KDEvent));
+    queue_tail = (queue_tail + 1) % MESSAGE_QUEUE_SIZE;
+    if (queue_active < MESSAGE_QUEUE_SIZE) {
+        queue_active++;
+    } else {
+        queue_head = (queue_head + 1) % MESSAGE_QUEUE_SIZE;
+    }
+}
+
+KDEvent *dequeue_event (void)
+{
+    KDEvent *ev;
+    if (!queue_active) {
+        return NULL;
+    }
+    ev = &message_queue[queue_head];
+    queue_head = (queue_head + 1) % MESSAGE_QUEUE_SIZE;
+    queue_active--;
+    return ev;
+}
+
 LRESULT CALLBACK WindowProcedure (HWND hwnd, UINT uMsg, WPARAM wParam,
                                   LPARAM lParam)
 {
+    KDWindow *window = window_list;
+    KDEvent ev = {0};
+    LRESULT result = DefWindowProc (hwnd, uMsg, wParam, lParam);
+    while (window != NULL && window->hwindow != hwnd) {
+        window = window->next;
+    }
+    if (window == NULL) {
+        return result;
+    }
+    ev.timestamp = kdGetTimeUST();
+    ev.userptr = window->userptr;
     switch (uMsg) {
         case WM_CLOSE:
-            PostQuitMessage (0);
+            /* KD_EVENT_WINDOW_CLOSE */
+            ev.type = KD_EVENT_WINDOW_CLOSE;
             break;
-        case WM_CREATE:
+        case WM_SIZE:
+            /* KD_EVENT_WINDOWPROPERTY_CHANGE size*/
+            ev.type = KD_EVENT_WINDOWPROPERTY_CHANGE;
+            window->width = LOWORD (lParam);
+            window->height = HIWORD (lParam);
+            ev.data.windowproperty.pname = KD_WINDOWPROPERTY_SIZE;
             break;
-        default:
-            return DefWindowProc (hwnd, uMsg, wParam, lParam);
+        case WM_SETTEXT:
+            /* KD_EVENT_WINDOWPROPERTY_CHANGE caption*/
+            ev.type = KD_EVENT_WINDOWPROPERTY_CHANGE;
+            ev.data.windowproperty.pname = KD_WINDOWPROPERTY_CAPTION;
+            break;
+        case WM_PAINT:
+            /* KD_EVENT_WINDOW_REDRAW */
+            ev.type = KD_EVENT_WINDOW_REDRAW;
+            break;
+        case WM_KILLFOCUS:
+            /* KD_EVENT_WINDOW_FOCUS */
+            ev.type = KD_EVENT_WINDOW_FOCUS;
+            ev.data.windowfocus.focusstate = 0;
+            break;
+        case WM_SETFOCUS:
+            /* KD_EVENT_WINDOW_FOCUS */
+            ev.type = KD_EVENT_WINDOW_FOCUS;
+            ev.data.windowfocus.focusstate = 1;
+            break;
     }
-    return 0;
+    /* TODO: call callback if set and return. */
+    /* if no callbacks are set, then enquee */
+    enqueue_event (&ev);
+    return result;
 }
 
 KD_API KDint KD_APIENTRY kdRealizeWindow (KDWindow *window,
@@ -255,6 +326,22 @@ KD_API void KD_APIENTRY kdDefaultEvent (const KDEvent *event)
 
 KD_API const KDEvent *KD_APIENTRY kdWaitEvent (KDust timeout)
 {
+    KDEvent *ev;
+    MSG msg;
+    do {
+        while (PeekMessage (&msg, 0, 0, 0, PM_REMOVE)) {
+            TranslateMessage (&msg);
+            DispatchMessage (&msg);
+        }
+        ev = dequeue_event();
+        if (ev != NULL) {
+            return ev;
+        }
+        if (timeout == 0) {
+            kdSetError (KD_EAGAIN);
+            return KD_NULL;
+        }
+    } while (WaitMessage());
     kdSetError (KD_EAGAIN);
     return KD_NULL;
 }

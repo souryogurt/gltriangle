@@ -51,9 +51,15 @@ KD_API void *KD_APIENTRY kdMalloc (KDsize size)
 {
     return malloc (size);
 }
+
 KD_API void KD_APIENTRY kdFree (void *ptr)
 {
     free (ptr);
+}
+
+KD_API void *KD_APIENTRY kdMemcpy (void *buf, const void *src, KDsize len)
+{
+    return memcpy (buf, src, len);
 }
 
 KD_API KDust KD_APIENTRY kdGetTimeUST (void)
